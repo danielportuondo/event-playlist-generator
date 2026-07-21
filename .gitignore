@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.token_cache.json
+.pytest_cache/
+.ruff_cache/
