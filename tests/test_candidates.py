@@ -7,7 +7,12 @@ from app.llm.candidates import generate_candidates
 from app.llm.prompt import Brief
 
 TEMPLATE = PRESETS["dinner_party"]
-CONFIG = Config(gemini_api_key="test-key", gemini_model="test-model")
+CONFIG = Config(
+    gemini_api_key="test-key",
+    gemini_model="test-model",
+    spotify_client_id="test-client-id",
+    spotify_redirect_uri="http://127.0.0.1:8000/callback",
+)
 
 
 class _FakeResponse:

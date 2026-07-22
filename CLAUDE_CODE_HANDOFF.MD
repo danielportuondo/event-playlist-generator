@@ -270,6 +270,9 @@ Flag these clearly to the developer and pause until confirmed:
 2. The app starts in development mode with a small allow-list of users; the developer
    must add their own Spotify account email to the app's user list. This is expected for
    a personal MVP — do NOT attempt a quota-extension / production review for v1.
+   **Note (as of 2026-03-09):** Spotify now requires a Premium subscription to use
+   Developer Mode at all, and the allow-list limit dropped from 25 to 5 users — verify
+   against current Spotify docs if this changes again.
 3. **Get an Anthropic API key** and put it in `.env`.
 4. Fill `.env` from `.env.example`.
 
