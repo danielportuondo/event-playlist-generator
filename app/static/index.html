@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Event-Arc Playlist Builder</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <h1>Event-Arc Playlist Builder</h1>
+
+  <div id="login-banner" class="banner hidden">
+    Not logged in to Spotify. <a href="/login">Log in</a> to generate playlists.
+  </div>
+
+  <form id="brief-form">
+    <fieldset>
+      <legend>Seed songs (optional, up to 2)</legend>
+      <div class="row">
+        <input id="seed1-title" placeholder="Seed 1 title">
+        <input id="seed1-artist" placeholder="Seed 1 artist">
+      </div>
+      <div class="row">
+        <input id="seed2-title" placeholder="Seed 2 title">
+        <input id="seed2-artist" placeholder="Seed 2 artist">
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Event</legend>
+      <div class="row">
+        <select id="event-select"></select>
+        <label>Duration (min) <input id="duration" type="number" min="15" max="600"></label>
+      </div>
+      <p id="event-description" class="muted"></p>
+      <input id="vibe" placeholder="Optional vibe, e.g. 'latin flavor, nothing too moody'">
+      <div class="row">
+        <label><input id="discovery" type="checkbox"> Discovery mode (lesser-known tracks)</label>
+        <label><input id="explicit" type="checkbox" checked> Explicit content OK</label>
+      </div>
+    </fieldset>
+
+    <div class="row">
+      <button id="generate-btn" type="submit">Generate</button>
+      <button id="save-btn" type="button" disabled title="Coming in M5">Save to Spotify</button>
+    </div>
+  </form>
+
+  <div id="status" class="muted hidden"></div>
+  <div id="error" class="banner hidden"></div>
+
+  <div id="results" class="hidden">
+    <p id="summary"></p>
+    <p id="warning" class="banner hidden"></p>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Phase</th>
+          <th>Target energy</th>
+          <th>Actual energy</th>
+          <th>Track</th>
+          <th>Rationale</th>
+        </tr>
+      </thead>
+      <tbody id="results-body"></tbody>
+    </table>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

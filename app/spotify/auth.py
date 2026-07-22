@@ -117,6 +117,33 @@ def capture_callback(port: int) -> dict:
     return server.callback_params
 
 
+def get_cached_access_token(
+    config: Config,
+    client: httpx.Client | None = None,
+    cache_path: Path = TOKEN_CACHE_PATH,
+    now: float | None = None,
+) -> str | None:
+    now = time.time() if now is None else now
+    cache = load_token_cache(cache_path)
+    if cache is None:
+        return None
+
+    if not is_token_expired(cache["expires_at"], now):
+        return cache["access_token"]
+
+    token_response = refresh_access_token(config, cache["refresh_token"], client=client)
+    access_token = token_response["access_token"]
+    save_token_cache(
+        {
+            "access_token": access_token,
+            "refresh_token": token_response.get("refresh_token", cache["refresh_token"]),
+            "expires_at": now + token_response["expires_in"],
+        },
+        cache_path,
+    )
+    return access_token
+
+
 def get_valid_access_token(
     config: Config,
     client: httpx.Client | None = None,

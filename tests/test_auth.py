@@ -288,3 +288,48 @@ def test_get_valid_access_token_raises_on_spotify_error_param(tmp_path):
         message = str(exc)
 
     assert message is not None and "access_denied" in message
+
+
+def test_get_cached_access_token_returns_none_without_cache(tmp_path):
+    assert auth.get_cached_access_token(CONFIG, cache_path=tmp_path / "none.json") is None
+
+
+def test_get_cached_access_token_returns_valid_cached_token(tmp_path):
+    cache_path = tmp_path / ".token_cache.json"
+    auth.save_token_cache(
+        {"access_token": "cached-at", "refresh_token": "rt", "expires_at": 1000.0},
+        cache_path,
+    )
+
+    def exploding_client(*args, **kwargs):
+        raise AssertionError("should not make an HTTP call for a valid cached token")
+
+    token = auth.get_cached_access_token(
+        CONFIG,
+        client=httpx.Client(transport=httpx.MockTransport(exploding_client)),
+        cache_path=cache_path,
+        now=500.0,
+    )
+
+    assert token == "cached-at"
+
+
+def test_get_cached_access_token_refreshes_expired_token(tmp_path):
+    cache_path = tmp_path / ".token_cache.json"
+    auth.save_token_cache(
+        {"access_token": "old-at", "refresh_token": "rt-1", "expires_at": 1000.0},
+        cache_path,
+    )
+    client = _token_response_client(
+        {"access_token": "new-at", "expires_in": 3600, "token_type": "Bearer"}
+    )
+
+    token = auth.get_cached_access_token(
+        CONFIG, client=client, cache_path=cache_path, now=999.0
+    )
+
+    assert token == "new-at"
+    saved = auth.load_token_cache(cache_path)
+    assert saved["access_token"] == "new-at"
+    assert saved["refresh_token"] == "rt-1"
+    assert saved["expires_at"] == 999.0 + 3600

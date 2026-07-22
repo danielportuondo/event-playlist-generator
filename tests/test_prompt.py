@@ -46,3 +46,19 @@ def test_user_prompt_handles_no_seeds():
     prompt = build_user_prompt(brief, template, n_candidates=20)
 
     assert "none given" in prompt.lower()
+
+
+def test_user_prompt_requires_seed_inclusion_when_seeds_present():
+    brief = Brief(seeds=(("Song A", "Artist A"),))
+    template = PRESETS["dinner_party"]
+    prompt = build_user_prompt(brief, template, n_candidates=20)
+
+    assert "Include each seed song itself" in prompt
+
+
+def test_user_prompt_omits_seed_inclusion_without_seeds():
+    brief = Brief()
+    template = PRESETS["dinner_party"]
+    prompt = build_user_prompt(brief, template, n_candidates=20)
+
+    assert "Include each seed song itself" not in prompt

@@ -65,4 +65,10 @@ def build_user_prompt(
         "loudest options."
     )
 
+    if brief.seeds:
+        lines.append(
+            "Include each seed song itself as one of the candidates, with your "
+            "own estimates for it."
+        )
+
     return "\n".join(lines)
