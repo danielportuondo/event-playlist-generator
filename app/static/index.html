@@ -3,73 +3,113 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Event-Arc Playlist Builder</title>
+  <title>Event-Arc — playlists shaped to your evening</title>
+  <meta name="description" content="Generate Spotify playlists that follow the energy arc of your event.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400;1,9..144,500&family=Albert+Sans:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <h1>Event-Arc Playlist Builder</h1>
+  <div class="sky" aria-hidden="true"></div>
 
-  <div id="login-banner" class="banner hidden">
-    Not logged in to Spotify. <a href="/login">Log in</a> to generate playlists.
-  </div>
+  <header class="hero">
+    <p class="eyebrow">Event-Arc</p>
+    <h1>Every evening has an arc.<br>Your playlist should follow it.</h1>
+    <p class="hero-sub">Pick the occasion, set the length, and get a sequence that rises and settles with the room — then send it to Spotify.</p>
+  </header>
 
-  <form id="brief-form">
-    <fieldset>
-      <legend>Seed songs (optional, up to 2)</legend>
-      <div class="row">
-        <input id="seed1-title" placeholder="Seed 1 title">
-        <input id="seed1-artist" placeholder="Seed 1 artist">
-      </div>
-      <div class="row">
-        <input id="seed2-title" placeholder="Seed 2 title">
-        <input id="seed2-artist" placeholder="Seed 2 artist">
-      </div>
-    </fieldset>
-
-    <fieldset>
-      <legend>Event</legend>
-      <div class="row">
-        <select id="event-select"></select>
-        <label>Duration (min) <input id="duration" type="number" min="15" max="240"></label>
-      </div>
-      <p id="event-description" class="muted"></p>
-      <input id="vibe" placeholder="Optional vibe, e.g. 'latin flavor, nothing too moody'">
-      <div class="row">
-        <label><input id="discovery" type="checkbox"> Discovery mode (lesser-known tracks)</label>
-        <label><input id="explicit" type="checkbox" checked> Explicit content OK</label>
-      </div>
-    </fieldset>
-
-    <div class="row">
-      <button id="generate-btn" type="submit">Generate</button>
+  <main>
+    <div id="login-banner" class="notice notice-login hidden">
+      <span>You're not connected to Spotify.</span>
+      <a class="notice-link" href="/login">Connect to generate playlists</a>
     </div>
-  </form>
 
-  <div id="status" class="muted hidden"></div>
-  <div id="error" class="banner hidden"></div>
+    <form id="brief-form" class="card" aria-label="Playlist brief">
+      <div class="field-grid">
+        <div class="field field-event">
+          <label for="event-select">Occasion</label>
+          <select id="event-select"></select>
+          <p id="event-description" class="hint"></p>
+        </div>
+        <div class="field field-duration">
+          <label for="duration">Length <span class="unit">min</span></label>
+          <input id="duration" type="number" min="15" max="240" inputmode="numeric">
+        </div>
+      </div>
 
-  <div id="results" class="hidden">
-    <p id="summary"></p>
-    <p id="warning" class="banner hidden"></p>
-    <div class="row">
-      <input id="playlist-name" placeholder="Playlist name">
-      <button id="save-btn" type="button">Save to Spotify</button>
+      <div class="field">
+        <label for="vibe">Vibe <span class="optional">optional</span></label>
+        <input id="vibe" placeholder="e.g. latin flavor, nothing too moody">
+      </div>
+
+      <details class="seeds">
+        <summary>Anchor it with up to two songs you love</summary>
+        <div class="seed-rows">
+          <div class="seed-row">
+            <input id="seed1-title" placeholder="Song title" aria-label="Seed 1 title">
+            <input id="seed1-artist" placeholder="Artist" aria-label="Seed 1 artist">
+          </div>
+          <div class="seed-row">
+            <input id="seed2-title" placeholder="Song title" aria-label="Seed 2 title">
+            <input id="seed2-artist" placeholder="Artist" aria-label="Seed 2 artist">
+          </div>
+        </div>
+      </details>
+
+      <div class="form-foot">
+        <div class="toggles">
+          <label class="toggle">
+            <input id="discovery" type="checkbox">
+            <span class="track" aria-hidden="true"></span>
+            <span>Lesser-known tracks</span>
+          </label>
+          <label class="toggle">
+            <input id="explicit" type="checkbox" checked>
+            <span class="track" aria-hidden="true"></span>
+            <span>Explicit is fine</span>
+          </label>
+        </div>
+        <button id="generate-btn" type="submit">Generate playlist</button>
+      </div>
+    </form>
+
+    <div id="status" class="status hidden" role="status">
+      <svg class="status-arc" viewBox="0 0 48 24" aria-hidden="true">
+        <path d="M2 22 Q 14 2 24 8 Q 34 14 46 4" fill="none" pathLength="1"></path>
+      </svg>
+      <span>Composing your arc — this can take up to a minute.</span>
     </div>
-    <p id="save-result" class="hidden"></p>
-    <table>
-      <thead>
-        <tr>
-          <th>#</th>
-          <th>Phase</th>
-          <th>Target energy</th>
-          <th>Actual energy</th>
-          <th>Track</th>
-          <th>Rationale</th>
-        </tr>
-      </thead>
-      <tbody id="results-body"></tbody>
-    </table>
-  </div>
+    <div id="error" class="notice notice-error hidden" role="alert"></div>
+
+    <section id="results" class="hidden" aria-label="Generated playlist">
+      <div class="results-head">
+        <h2>The evening, plotted</h2>
+        <p id="summary" class="stats"></p>
+      </div>
+      <p id="warning" class="notice notice-warn hidden"></p>
+
+      <figure class="arc-figure">
+        <div id="arc-mount"></div>
+        <figcaption class="arc-caption">
+          <span><i class="key key-line"></i> target energy</span>
+          <span><i class="key key-dot"></i> track as picked</span>
+        </figcaption>
+      </figure>
+
+      <div class="save-row">
+        <input id="playlist-name" placeholder="Playlist name" aria-label="Playlist name">
+        <button id="save-btn" type="button">Save to Spotify</button>
+      </div>
+      <p id="save-result" class="save-result hidden"></p>
+
+      <div id="track-list"></div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Sequenced by phase energy · resolved on Spotify</span>
+  </footer>
 
   <script src="/static/app.js"></script>
 </body>
