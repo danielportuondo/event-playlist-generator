@@ -1,3 +1,4 @@
+import httpx
 from fastapi.testclient import TestClient
 
 from app import main
@@ -135,7 +136,9 @@ def test_generate_shortens_playlist_on_resolution_shortfall(monkeypatch):
             track.spotify_uri = f"spotify:track:id-{i}"
             track.resolved_title = track.title
             track.resolved_artist = track.artist
-        return ResolutionStats(total=len(candidates), resolved=2, rate=2 / len(candidates))
+        return ResolutionStats(
+            total=len(candidates), resolved=2, rate=2 / len(candidates)
+        )
 
     _patch_pipeline(monkeypatch, _fake_candidates(10), resolver=resolve_two)
 
@@ -167,9 +170,7 @@ def test_generate_502_when_nothing_resolves(monkeypatch):
 def test_callback_rejects_state_mismatch(monkeypatch):
     monkeypatch.setattr(main, "_get_config", lambda: CONFIG)
 
-    response = client.get(
-        "/callback", params={"code": "abc", "state": "never-issued"}
-    )
+    response = client.get("/callback", params={"code": "abc", "state": "never-issued"})
 
     assert response.status_code == 400
 
@@ -177,9 +178,7 @@ def test_callback_rejects_state_mismatch(monkeypatch):
 def test_callback_rejects_spotify_error(monkeypatch):
     monkeypatch.setattr(main, "_get_config", lambda: CONFIG)
 
-    response = client.get(
-        "/callback", params={"error": "access_denied", "state": "s"}
-    )
+    response = client.get("/callback", params={"error": "access_denied", "state": "s"})
 
     assert response.status_code == 400
     assert "access_denied" in response.json()["detail"]
@@ -191,4 +190,143 @@ def test_login_redirects_to_spotify_authorize(monkeypatch):
     response = client.get("/login", follow_redirects=False)
 
     assert response.status_code == 307
-    assert response.headers["location"].startswith("https://accounts.spotify.com/authorize")
+    assert response.headers["location"].startswith(
+        "https://accounts.spotify.com/authorize"
+    )
+
+
+def _patch_save(monkeypatch, token="at-1"):
+    calls = {}
+    monkeypatch.setattr(main, "_get_config", lambda: CONFIG)
+    monkeypatch.setattr(main.auth, "get_cached_access_token", lambda *a, **kw: token)
+
+    def fake_create(name, access_token, description=""):
+        calls["create"] = {"name": name, "description": description}
+        return {
+            "id": "pl-1",
+            "external_urls": {"spotify": "https://open.spotify.com/playlist/pl-1"},
+        }
+
+    def fake_add(playlist_id, uris, access_token):
+        calls["add"] = {"playlist_id": playlist_id, "uris": uris}
+
+    monkeypatch.setattr(main, "create_playlist", fake_create)
+    monkeypatch.setattr(main, "add_tracks", fake_add)
+    return calls
+
+
+def test_save_requires_login(monkeypatch):
+    _patch_save(monkeypatch, token=None)
+
+    response = client.post(
+        "/api/save", json={"name": "Mix", "uris": ["spotify:track:a"]}
+    )
+
+    assert response.status_code == 401
+
+
+def test_save_rejects_empty_uris(monkeypatch):
+    _patch_save(monkeypatch)
+
+    response = client.post("/api/save", json={"name": "Mix", "uris": []})
+
+    assert response.status_code == 422
+
+
+def test_save_creates_playlist_and_adds_tracks(monkeypatch):
+    calls = _patch_save(monkeypatch)
+    uris = ["spotify:track:a", "spotify:track:b"]
+
+    response = client.post("/api/save", json={"name": "Dinner mix", "uris": uris})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data == {
+        "playlist_id": "pl-1",
+        "playlist_url": "https://open.spotify.com/playlist/pl-1",
+        "track_count": 2,
+    }
+    assert calls["create"] == {"name": "Dinner mix", "description": ""}
+    assert calls["add"] == {"playlist_id": "pl-1", "uris": uris}
+
+
+def test_save_returns_502_on_spotify_error(monkeypatch):
+    _patch_save(monkeypatch)
+
+    def boom(*a, **kw):
+        raise httpx.HTTPError("spotify down")
+
+    monkeypatch.setattr(main, "create_playlist", boom)
+
+    response = client.post(
+        "/api/save", json={"name": "Mix", "uris": ["spotify:track:a"]}
+    )
+
+    assert response.status_code == 502
+    assert "Spotify save failed" in response.json()["detail"]
+
+
+def test_generate_shortens_playlist_when_artist_cap_limits_pool(monkeypatch):
+    # 11 tracks by one artist + 1 unique: all resolve, but dinner_party caps
+    # each artist at 2, so only 3 tracks are usable for the 4 slots of 15 min.
+    candidates = [
+        CandidateTrack(
+            title=f"Song {i}",
+            artist="Same Artist" if i < 11 else "Other Artist",
+            energy=(10 + i * 7) % 90,
+            tempo=100,
+            valence=60,
+            rationale=f"reason {i}",
+        )
+        for i in range(12)
+    ]
+    _patch_pipeline(monkeypatch, candidates)
+
+    response = client.post(
+        "/api/generate",
+        json={"event_id": "dinner_party", "duration_min": 15},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["rows"]) == 3
+    assert "artist-repeat" in data["warning"]
+    artists = [r["artist"] for r in data["rows"]]
+    assert artists.count("Same Artist") == 2
+
+
+def test_save_deletes_playlist_when_add_tracks_fails(monkeypatch):
+    calls = _patch_save(monkeypatch)
+
+    def add_boom(*a, **kw):
+        raise httpx.HTTPError("add failed")
+
+    def fake_unfollow(playlist_id, access_token):
+        calls["unfollow"] = playlist_id
+
+    monkeypatch.setattr(main, "add_tracks", add_boom)
+    monkeypatch.setattr(main, "unfollow_playlist", fake_unfollow)
+
+    response = client.post(
+        "/api/save", json={"name": "Mix", "uris": ["spotify:track:a"]}
+    )
+
+    assert response.status_code == 502
+    assert calls["unfollow"] == "pl-1"
+
+
+def test_save_surfaces_add_error_even_if_cleanup_fails(monkeypatch):
+    _patch_save(monkeypatch)
+
+    def boom(*a, **kw):
+        raise httpx.HTTPError("spotify down")
+
+    monkeypatch.setattr(main, "add_tracks", boom)
+    monkeypatch.setattr(main, "unfollow_playlist", boom)
+
+    response = client.post(
+        "/api/save", json={"name": "Mix", "uris": ["spotify:track:a"]}
+    )
+
+    assert response.status_code == 502
+    assert "Spotify save failed" in response.json()["detail"]

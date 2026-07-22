@@ -1,3 +1,4 @@
+import json
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -21,7 +22,9 @@ def _client_with_responses(responses_by_title):
     return httpx.Client(transport=httpx.MockTransport(handler))
 
 
-def _search_result(spotify_id, name="Resolved Name", artist_name="Resolved Artist", popularity=50):
+def _search_result(
+    spotify_id, name="Resolved Name", artist_name="Resolved Artist", popularity=50
+):
     return {
         "tracks": {
             "items": [
@@ -51,7 +54,9 @@ def _mock_client(status_code, json_body, captured=None):
 
 def test_get_me_sends_bearer_auth_and_returns_json():
     captured = {}
-    http_client = _mock_client(200, {"id": "user-1", "display_name": "Test User"}, captured)
+    http_client = _mock_client(
+        200, {"id": "user-1", "display_name": "Test User"}, captured
+    )
 
     result = client.get_me("token-abc", client=http_client)
 
@@ -79,7 +84,9 @@ def test_search_track_builds_expected_query():
 def test_search_track_returns_none_when_no_results():
     http_client = _mock_client(200, {"tracks": {"items": []}})
 
-    result = client.search_track("Nonexistent Song", "Nobody", "token-abc", client=http_client)
+    result = client.search_track(
+        "Nonexistent Song", "Nobody", "token-abc", client=http_client
+    )
 
     assert result is None
 
@@ -102,7 +109,9 @@ def test_search_track_parses_top_result():
         },
     )
 
-    result = client.search_track("Landslide", "Fleetwood Mac", "token-abc", client=http_client)
+    result = client.search_track(
+        "Landslide", "Fleetwood Mac", "token-abc", client=http_client
+    )
 
     assert result.spotify_id == "track-id-1"
     assert result.spotify_uri == "spotify:track:track-id-1"
@@ -181,3 +190,57 @@ def test_resolve_candidates_computes_match_rate_across_mixed_results():
     assert stats.total == 4
     assert stats.resolved == 2
     assert stats.rate == 0.5
+
+
+def test_create_playlist_posts_private_playlist():
+    captured = {}
+    http_client = _mock_client(
+        201,
+        {
+            "id": "pl-1",
+            "external_urls": {"spotify": "https://open.spotify.com/playlist/pl-1"},
+        },
+        captured,
+    )
+
+    result = client.create_playlist(
+        "Dinner mix", "token-abc", description="arc test", client=http_client
+    )
+
+    request = captured["request"]
+    assert request.url == "https://api.spotify.com/v1/me/playlists"
+    assert request.headers["Authorization"] == "Bearer token-abc"
+    body = json.loads(request.content)
+    assert body == {"name": "Dinner mix", "description": "arc test", "public": False}
+    assert result["id"] == "pl-1"
+
+
+def test_add_tracks_batches_by_100():
+    batches = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        batches.append(json.loads(request.content)["uris"])
+        assert str(request.url) == "https://api.spotify.com/v1/playlists/pl-1/items"
+        assert request.headers["Authorization"] == "Bearer token-abc"
+        return httpx.Response(201, json={"snapshot_id": "snap"})
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+    uris = [f"spotify:track:{i}" for i in range(230)]
+
+    client.add_tracks("pl-1", uris, "token-abc", client=http_client)
+
+    assert [len(b) for b in batches] == [100, 100, 30]
+    assert batches[0][0] == "spotify:track:0"
+    assert batches[2][-1] == "spotify:track:229"
+
+
+def test_unfollow_playlist_deletes_followers():
+    captured = {}
+    http_client = _mock_client(200, {}, captured)
+
+    client.unfollow_playlist("pl-1", "token-abc", client=http_client)
+
+    request = captured["request"]
+    assert request.method == "DELETE"
+    assert request.url == "https://api.spotify.com/v1/playlists/pl-1/followers"
+    assert request.headers["Authorization"] == "Bearer token-abc"

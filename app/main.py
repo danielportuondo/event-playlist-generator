@@ -1,5 +1,6 @@
 import secrets
 import time
+from collections import Counter
 from pathlib import Path
 
 import httpx
@@ -15,7 +16,12 @@ from app.config import Config, load_config
 from app.llm.candidates import generate_candidates
 from app.llm.prompt import Brief
 from app.spotify import auth
-from app.spotify.client import resolve_candidates
+from app.spotify.client import (
+    add_tracks,
+    create_playlist,
+    resolve_candidates,
+    unfollow_playlist,
+)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -41,10 +47,16 @@ class SeedInput(BaseModel):
 class GenerateRequest(BaseModel):
     event_id: str
     seeds: list[SeedInput] = Field(default_factory=list, max_length=2)
-    duration_min: float | None = None
+    duration_min: float | None = Field(default=None, ge=15, le=240)
     vibe: str = ""
     discovery_mode: bool = False
     allow_explicit: bool = True
+
+
+class SaveRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    uris: list[str] = Field(min_length=1)
+    description: str = ""
 
 
 @app.get("/")
@@ -65,7 +77,9 @@ def login() -> RedirectResponse:
 @app.get("/callback")
 def callback(code: str = "", state: str = "", error: str = "") -> RedirectResponse:
     if error:
-        raise HTTPException(status_code=400, detail=f"Spotify authorization failed: {error}")
+        raise HTTPException(
+            status_code=400, detail=f"Spotify authorization failed: {error}"
+        )
 
     verifier = _pending_auth.pop(state, None)
     if verifier is None:
@@ -109,15 +123,49 @@ def generate(request: GenerateRequest) -> dict:
     return run_pipeline(request)
 
 
+@app.post("/api/save")
+def save(request: SaveRequest) -> dict:
+    config = _get_config()
+    token = auth.get_cached_access_token(config)
+    if token is None:
+        raise HTTPException(
+            status_code=401, detail="Not logged in — visit /login first."
+        )
+
+    try:
+        playlist = create_playlist(request.name, token, description=request.description)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"Spotify save failed: {exc}")
+
+    try:
+        add_tracks(playlist["id"], request.uris, token)
+    except httpx.HTTPError as exc:
+        try:
+            unfollow_playlist(playlist["id"], token)
+        except httpx.HTTPError:
+            pass  # cleanup is best-effort; surface the original failure
+        raise HTTPException(status_code=502, detail=f"Spotify save failed: {exc}")
+
+    return {
+        "playlist_id": playlist["id"],
+        "playlist_url": playlist.get("external_urls", {}).get("spotify", ""),
+        "track_count": len(request.uris),
+    }
+
+
 def run_pipeline(request: GenerateRequest) -> dict:
     config = _get_config()
     token = auth.get_cached_access_token(config)
     if token is None:
-        raise HTTPException(status_code=401, detail="Not logged in — visit /login first.")
+        raise HTTPException(
+            status_code=401, detail="Not logged in — visit /login first."
+        )
 
     template = PRESETS.get(request.event_id)
     if template is None:
-        raise HTTPException(status_code=422, detail=f"Unknown event_id '{request.event_id}'.")
+        raise HTTPException(
+            status_code=422, detail=f"Unknown event_id '{request.event_id}'."
+        )
 
     duration_min = request.duration_min or template.default_duration_min
     brief = Brief(
@@ -130,7 +178,9 @@ def run_pipeline(request: GenerateRequest) -> dict:
     try:
         candidates = generate_candidates(brief, template, duration_min, config)
     except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Candidate generation failed: {exc}")
+        raise HTTPException(
+            status_code=502, detail=f"Candidate generation failed: {exc}"
+        )
 
     try:
         stats = resolve_candidates(candidates, token)
@@ -139,17 +189,23 @@ def run_pipeline(request: GenerateRequest) -> dict:
 
     resolved = [t for t in candidates if t.spotify_uri]
     if not resolved:
-        raise HTTPException(status_code=502, detail="No candidates resolved on Spotify.")
+        raise HTTPException(
+            status_code=502, detail="No candidates resolved on Spotify."
+        )
 
     seed_keys = {(s.title.lower(), s.artist.lower()) for s in request.seeds}
     seeds = [t for t in resolved if (t.title.lower(), t.artist.lower()) in seed_keys]
 
     warning = None
     n_slots = len(build_target_curve(template, duration_min))
-    if len(resolved) < n_slots:
-        duration_min = len(resolved) * template.constraints.avg_track_len_min
+    artist_counts = Counter(t.artist for t in resolved)
+    cap = template.constraints.max_same_artist_total
+    usable = sum(min(count, cap) for count in artist_counts.values())
+    if usable < n_slots:
+        duration_min = usable * template.constraints.avg_track_len_min
         warning = (
-            f"Only {len(resolved)} of {n_slots} needed tracks resolved; "
+            f"Only {usable} of {n_slots} needed tracks are usable after Spotify "
+            f"resolution and artist-repeat limits; "
             f"playlist shortened to ~{round(duration_min)} min."
         )
 
@@ -169,6 +225,10 @@ def run_pipeline(request: GenerateRequest) -> dict:
     return {
         "rows": rows,
         "total_cost": result.total_cost,
-        "resolution": {"total": stats.total, "resolved": stats.resolved, "rate": stats.rate},
+        "resolution": {
+            "total": stats.total,
+            "resolved": stats.resolved,
+            "rate": stats.rate,
+        },
         "warning": warning,
     }

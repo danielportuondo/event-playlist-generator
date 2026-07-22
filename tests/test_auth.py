@@ -58,7 +58,7 @@ def test_build_authorize_url_contains_expected_params():
     assert params["code_challenge_method"] == ["S256"]
     assert params["code_challenge"] == ["xyz789"]
     assert params["state"] == ["abc123"]
-    assert params["scope"] == ["playlist-modify-private"]
+    assert params["scope"] == ["playlist-modify-private playlist-modify-public"]
 
 
 def _mock_client(status_code, json_body, captured):

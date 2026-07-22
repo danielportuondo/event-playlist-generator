@@ -66,7 +66,71 @@ def resolve_candidates(
             client.close()
 
     total = len(candidates)
-    return ResolutionStats(total=total, resolved=resolved, rate=resolved / total if total else 0.0)
+    return ResolutionStats(
+        total=total, resolved=resolved, rate=resolved / total if total else 0.0
+    )
+
+
+def create_playlist(
+    name: str,
+    access_token: str,
+    description: str = "",
+    client: httpx.Client | None = None,
+) -> dict:
+    owns_client = client is None
+    client = client or httpx.Client()
+    try:
+        # POST /users/{id}/playlists returns a bare 403 for this app; /me/playlists works.
+        response = client.post(
+            f"{BASE_URL}/me/playlists",
+            json={"name": name, "description": description, "public": False},
+            headers=_auth_headers(access_token),
+        )
+        response.raise_for_status()
+        return response.json()
+    finally:
+        if owns_client:
+            client.close()
+
+
+def add_tracks(
+    playlist_id: str,
+    uris: list[str],
+    access_token: str,
+    client: httpx.Client | None = None,
+) -> None:
+    owns_client = client is None
+    client = client or httpx.Client()
+    try:
+        for start in range(0, len(uris), 100):
+            # Feb 2026 API migration renamed /tracks -> /items; the old path 403s.
+            response = client.post(
+                f"{BASE_URL}/playlists/{playlist_id}/items",
+                json={"uris": uris[start : start + 100]},
+                headers=_auth_headers(access_token),
+            )
+            response.raise_for_status()
+    finally:
+        if owns_client:
+            client.close()
+
+
+def unfollow_playlist(
+    playlist_id: str,
+    access_token: str,
+    client: httpx.Client | None = None,
+) -> None:
+    owns_client = client is None
+    client = client or httpx.Client()
+    try:
+        response = client.delete(
+            f"{BASE_URL}/playlists/{playlist_id}/followers",
+            headers=_auth_headers(access_token),
+        )
+        response.raise_for_status()
+    finally:
+        if owns_client:
+            client.close()
 
 
 def search_track(

@@ -14,7 +14,10 @@ from app.config import Config
 
 AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
 TOKEN_URL = "https://accounts.spotify.com/api/token"
-SCOPE = "playlist-modify-private"
+# playlist-modify-public is required even for private playlists: Spotify creates
+# API playlists with public=True regardless of the request body, and modifying
+# them 403s with only the private scope.
+SCOPE = "playlist-modify-private playlist-modify-public"
 TOKEN_CACHE_PATH = Path(".token_cache.json")
 
 

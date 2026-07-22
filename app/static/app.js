@@ -1,6 +1,7 @@
 const $ = (id) => document.getElementById(id);
 
 let presets = [];
+let lastUris = [];
 
 async function init() {
   const session = await fetch("/api/session").then((r) => r.json());
@@ -68,6 +69,33 @@ async function generate(event) {
   }
 }
 
+async function save() {
+  const name = $("playlist-name").value.trim();
+  if (!name || !lastUris.length) return;
+
+  $("save-btn").disabled = true;
+  $("save-result").classList.add("hidden");
+  try {
+    const response = await fetch("/api/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, uris: lastUris }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || `HTTP ${response.status}`);
+    $("save-result").innerHTML = "";
+    const link = document.createElement("a");
+    link.href = data.playlist_url;
+    link.target = "_blank";
+    link.textContent = name;
+    $("save-result").append(`Saved ${data.track_count} tracks to `, link);
+  } catch (err) {
+    $("save-result").textContent = `Save failed: ${err.message}`;
+    $("save-btn").disabled = false;
+  }
+  $("save-result").classList.remove("hidden");
+}
+
 function renderResults(data) {
   const res = data.resolution;
   $("summary").textContent =
@@ -98,8 +126,15 @@ function renderResults(data) {
     }
     body.appendChild(tr);
   }
+
+  lastUris = data.rows.map((row) => row.spotify_uri);
+  const preset = presets.find((p) => p.id === $("event-select").value);
+  $("playlist-name").value = preset ? `${preset.label} mix` : "Event mix";
+  $("save-btn").disabled = false;
+  $("save-result").classList.add("hidden");
   $("results").classList.remove("hidden");
 }
 
 $("brief-form").addEventListener("submit", generate);
+$("save-btn").addEventListener("click", save);
 init();

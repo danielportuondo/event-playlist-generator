@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from app.arc.models import EventTemplate
+from app.arc.models import EventTemplate, Phase
 
 
 @dataclass(frozen=True)
@@ -29,6 +29,7 @@ def build_user_prompt(
     brief: Brief,
     template: EventTemplate,
     n_candidates: int,
+    focus_phase: Phase | None = None,
 ) -> str:
     lines: list[str] = []
 
@@ -53,17 +54,30 @@ def build_user_prompt(
 
     lines.append(
         "Mode: "
-        + ("discovery (favor lesser-known tracks)" if brief.discovery_mode else "familiar (favor well-known tracks)")
+        + (
+            "discovery (favor lesser-known tracks)"
+            if brief.discovery_mode
+            else "familiar (favor well-known tracks)"
+        )
     )
     lines.append(
         "Explicit content: " + ("allowed" if brief.allow_explicit else "not allowed")
     )
 
-    lines.append(
-        f"Propose {n_candidates} candidate tracks. Cover the full range of phases "
-        "above — include low-energy as well as high-energy tracks, not just the "
-        "loudest options."
-    )
+    if focus_phase is not None:
+        lines.append(
+            f"Propose {n_candidates} candidate tracks for the '{focus_phase.name}' "
+            f"phase specifically: energy {focus_phase.energy[0]}-{focus_phase.energy[1]}, "
+            f"valence {focus_phase.valence[0]}-{focus_phase.valence[1]}, "
+            f"tempo {focus_phase.tempo[0]}-{focus_phase.tempo[1]} BPM. "
+            "Stay within those ranges."
+        )
+    else:
+        lines.append(
+            f"Propose {n_candidates} candidate tracks. Cover the full range of phases "
+            "above — include low-energy as well as high-energy tracks, not just the "
+            "loudest options."
+        )
 
     if brief.seeds:
         lines.append(

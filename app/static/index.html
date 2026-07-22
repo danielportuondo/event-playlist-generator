@@ -30,7 +30,7 @@
       <legend>Event</legend>
       <div class="row">
         <select id="event-select"></select>
-        <label>Duration (min) <input id="duration" type="number" min="15" max="600"></label>
+        <label>Duration (min) <input id="duration" type="number" min="15" max="240"></label>
       </div>
       <p id="event-description" class="muted"></p>
       <input id="vibe" placeholder="Optional vibe, e.g. 'latin flavor, nothing too moody'">
@@ -42,7 +42,6 @@
 
     <div class="row">
       <button id="generate-btn" type="submit">Generate</button>
-      <button id="save-btn" type="button" disabled title="Coming in M5">Save to Spotify</button>
     </div>
   </form>
 
@@ -52,6 +51,11 @@
   <div id="results" class="hidden">
     <p id="summary"></p>
     <p id="warning" class="banner hidden"></p>
+    <div class="row">
+      <input id="playlist-name" placeholder="Playlist name">
+      <button id="save-btn" type="button">Save to Spotify</button>
+    </div>
+    <p id="save-result" class="hidden"></p>
     <table>
       <thead>
         <tr>

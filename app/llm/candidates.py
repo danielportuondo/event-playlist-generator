@@ -1,14 +1,25 @@
 import json
 import math
 import re
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 
 from app.arc.curve import build_target_curve
 from app.arc.models import CandidateTrack, EventTemplate
 from app.config import Config
 from app.llm.prompt import Brief, build_system_prompt, build_user_prompt
 
-MAX_CALLS = 2
-MAX_CANDIDATES = 60
+# flash-lite occasionally collapses on large-count requests (returns a handful
+# instead of 100+); the loop exits early once n_slots is covered, so extra
+# retries only fire on shortfall.
+MAX_CALLS = 4
+# Largest ask the lite model honors reliably; above this it sometimes collapses,
+# and collapses repeat on identical prompts so retries don't compound. Larger
+# requests are split into one phase-focused call per phase and run concurrently.
+SINGLE_CALL_MAX = 60
+# Must keep the 2.5x multiplier real at long durations (180 min ≈ 48 slots);
+# a low cap starves the sequencer's artist-diversity constraints.
+MAX_CANDIDATES = 150
 
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE | re.MULTILINE)
 
@@ -103,7 +114,8 @@ def generate_candidates(
     config: Config,
     client: object | None = None,
 ) -> list[CandidateTrack]:
-    n_slots = len(build_target_curve(template, duration_min))
+    slots = build_target_curve(template, duration_min)
+    n_slots = len(slots)
     n_candidates = min(MAX_CANDIDATES, math.ceil(2.5 * n_slots))
 
     if client is None:
@@ -115,14 +127,7 @@ def generate_candidates(
     collected: list[CandidateTrack] = []
     seen: set[tuple[str, str]] = set()
 
-    for _call_num in range(MAX_CALLS):
-        remaining = n_candidates - len(collected)
-        if remaining <= 0:
-            break
-
-        user_prompt = build_user_prompt(brief, template, n_candidates=remaining)
-        raw = _call_model(client, config.gemini_model, system_prompt, user_prompt)
-
+    def _ingest(raw: str) -> None:
         for track in _parse_response_text(raw):
             key = _dedup_key(track)
             if key in seen:
@@ -130,7 +135,36 @@ def generate_candidates(
             seen.add(key)
             collected.append(track)
 
+    if n_candidates > SINGLE_CALL_MAX:
+        slot_counts = Counter(slot.phase.name for slot in slots)
+        phases = [p for p in template.phases if slot_counts[p.name]]
+        prompts = [
+            build_user_prompt(
+                brief,
+                template,
+                n_candidates=math.ceil(2.5 * slot_counts[phase.name]),
+                focus_phase=phase,
+            )
+            for phase in phases
+        ]
+        with ThreadPoolExecutor(max_workers=len(prompts)) as pool:
+            futures = [
+                pool.submit(
+                    _call_model, client, config.gemini_model, system_prompt, prompt
+                )
+                for prompt in prompts
+            ]
+        for future in futures:
+            _ingest(future.result())
+
+    for _call_num in range(MAX_CALLS):
         if len(collected) >= n_slots:
             break
+        remaining = min(n_candidates - len(collected), SINGLE_CALL_MAX)
+        if remaining <= 0:
+            break
+
+        user_prompt = build_user_prompt(brief, template, n_candidates=remaining)
+        _ingest(_call_model(client, config.gemini_model, system_prompt, user_prompt))
 
     return collected
