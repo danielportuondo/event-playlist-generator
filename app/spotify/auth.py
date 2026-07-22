@@ -19,6 +19,7 @@ TOKEN_URL = "https://accounts.spotify.com/api/token"
 # them 403s with only the private scope.
 SCOPE = "playlist-modify-private playlist-modify-public"
 TOKEN_CACHE_PATH = Path(".token_cache.json")
+APP_TOKEN_CACHE_PATH = Path(".app_token_cache.json")
 
 
 def generate_code_verifier() -> str:
@@ -85,6 +86,45 @@ def refresh_access_token(
     finally:
         if owns_client:
             client.close()
+
+
+def fetch_app_token(config: Config, client: httpx.Client | None = None) -> dict:
+    owns_client = client is None
+    client = client or httpx.Client()
+    try:
+        response = client.post(
+            TOKEN_URL,
+            data={"grant_type": "client_credentials"},
+            auth=(config.spotify_client_id, config.spotify_client_secret),
+        )
+        response.raise_for_status()
+        return response.json()
+    finally:
+        if owns_client:
+            client.close()
+
+
+def get_app_access_token(
+    config: Config,
+    client: httpx.Client | None = None,
+    cache_path: Path = APP_TOKEN_CACHE_PATH,
+    now: float | None = None,
+) -> str | None:
+    if not config.spotify_client_secret:
+        return None
+
+    now = time.time() if now is None else now
+    cache = load_token_cache(cache_path)
+    if cache is not None and not is_token_expired(cache["expires_at"], now):
+        return cache["access_token"]
+
+    token_response = fetch_app_token(config, client=client)
+    access_token = token_response["access_token"]
+    save_token_cache(
+        {"access_token": access_token, "expires_at": now + token_response["expires_in"]},
+        cache_path,
+    )
+    return access_token
 
 
 def load_token_cache(path: Path = TOKEN_CACHE_PATH) -> dict | None:

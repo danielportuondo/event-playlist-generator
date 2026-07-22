@@ -10,6 +10,8 @@ class Config:
     gemini_model: str
     spotify_client_id: str
     spotify_redirect_uri: str
+    # Optional: enables client-credentials search for anonymous visitors.
+    spotify_client_secret: str = ""
 
 
 def load_config() -> Config:
@@ -19,6 +21,7 @@ def load_config() -> Config:
     gemini_model = os.environ.get("GEMINI_MODEL", "").strip()
     spotify_client_id = os.environ.get("SPOTIFY_CLIENT_ID", "").strip()
     spotify_redirect_uri = os.environ.get("SPOTIFY_REDIRECT_URI", "").strip()
+    spotify_client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "").strip()
 
     missing = [
         name
@@ -41,4 +44,5 @@ def load_config() -> Config:
         gemini_model=gemini_model,
         spotify_client_id=spotify_client_id,
         spotify_redirect_uri=spotify_redirect_uri,
+        spotify_client_secret=spotify_client_secret,
     )

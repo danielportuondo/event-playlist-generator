@@ -6,3 +6,7 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .playwright-mcp/
+.app_token_cache.json
+.resolution_cache.json
+.spotify_call_log.json
+.harvest_keys.json

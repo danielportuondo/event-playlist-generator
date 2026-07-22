@@ -21,8 +21,8 @@
 
   <main>
     <div id="login-banner" class="notice notice-login hidden">
-      <span>You're not connected to Spotify.</span>
-      <a class="notice-link" href="/login">Connect to generate playlists</a>
+      <span id="login-banner-text">You're not connected to Spotify.</span>
+      <a id="login-banner-link" class="notice-link" href="/login">Connect to generate playlists</a>
     </div>
 
     <form id="brief-form" class="card" aria-label="Playlist brief">
@@ -97,11 +97,25 @@
         </figcaption>
       </figure>
 
-      <div class="save-row">
-        <input id="playlist-name" placeholder="Playlist name" aria-label="Playlist name">
-        <button id="save-btn" type="button">Save to Spotify</button>
+      <div id="save-area">
+        <div class="save-row">
+          <input id="playlist-name" placeholder="Playlist name" aria-label="Playlist name">
+          <button id="save-btn" type="button">Save to Spotify</button>
+        </div>
+        <p id="save-result" class="save-result hidden"></p>
       </div>
-      <p id="save-result" class="save-result hidden"></p>
+
+      <div class="export-row">
+        <button id="copy-links-btn" type="button" class="btn-ghost">Copy Spotify links</button>
+        <button id="copy-list-btn" type="button" class="btn-ghost">Copy track list</button>
+        <span id="copy-feedback" class="copy-feedback" role="status"></span>
+      </div>
+      <p id="visitor-note" class="visitor-note hidden">
+        Saving requires an invited Spotify account — Spotify limits this app to five users.
+        Reach out to Daniel Portuondo at <a href="mailto:dportuondo02@gmail.com">dportuondo02@gmail.com</a>
+        for access, or copy the Spotify links above and paste them into a new playlist in
+        Spotify's desktop app to add every track.
+      </p>
 
       <div id="track-list"></div>
     </section>
@@ -109,6 +123,7 @@
 
   <footer class="foot">
     <span>Sequenced by phase energy · resolved on Spotify</span>
+    <span id="call-count"></span>
   </footer>
 
   <script src="/static/app.js"></script>

@@ -2,10 +2,23 @@ const $ = (id) => document.getElementById(id);
 
 let presets = [];
 let lastUris = [];
+let lastRows = [];
+let isVisitor = false;
 
 async function init() {
   const session = await fetch("/api/session").then((r) => r.json());
-  if (!session.authenticated) $("login-banner").classList.remove("hidden");
+  isVisitor = !session.authenticated;
+  if (isVisitor) {
+    if (session.visitor_live) {
+      $("login-banner-text").textContent =
+        "You're browsing as a visitor — playlists generate live on Spotify.";
+      $("login-banner-link").textContent = "Log in with an invited account to save";
+    }
+    $("login-banner").classList.remove("hidden");
+  }
+  if (typeof session.spotify_calls_today === "number") {
+    $("call-count").textContent = ` · ${session.spotify_calls_today} Spotify calls today`;
+  }
 
   presets = await fetch("/api/presets").then((r) => r.json());
   const select = $("event-select");
@@ -93,6 +106,37 @@ async function save() {
     $("save-btn").disabled = false;
   }
   $("save-result").classList.remove("hidden");
+}
+
+/* ---------- exports ---------- */
+
+function trackUrl(uri) {
+  return `https://open.spotify.com/track/${uri.split(":").pop()}`;
+}
+
+async function copyToClipboard(text, message) {
+  const feedback = $("copy-feedback");
+  try {
+    await navigator.clipboard.writeText(text);
+    feedback.textContent = message;
+  } catch {
+    feedback.textContent = "Couldn't access the clipboard — select and copy from the list below.";
+  }
+}
+
+function copyLinks() {
+  const links = lastRows.filter((r) => r.spotify_uri).map((r) => trackUrl(r.spotify_uri));
+  copyToClipboard(
+    links.join("\n"),
+    `Copied ${links.length} links — paste into a new playlist in Spotify's desktop app.`
+  );
+}
+
+function copyList() {
+  const lines = lastRows.map(
+    (r) => `${r.resolved_title || r.title} — ${r.resolved_artist || r.artist}`
+  );
+  copyToClipboard(lines.join("\n"), `Copied ${lines.length} tracks as text.`);
 }
 
 /* ---------- arc visualization ---------- */
@@ -240,7 +284,17 @@ function renderTrackList(rows) {
 
       const name = document.createElement("div");
       name.className = "track-name";
-      name.textContent = row.resolved_title || row.title;
+      if (row.spotify_uri) {
+        const link = document.createElement("a");
+        link.className = "track-link";
+        link.href = trackUrl(row.spotify_uri);
+        link.target = "_blank";
+        link.rel = "noopener";
+        link.textContent = row.resolved_title || row.title;
+        name.appendChild(link);
+      } else {
+        name.textContent = row.resolved_title || row.title;
+      }
       const artist = document.createElement("span");
       artist.className = "artist";
       artist.textContent = ` — ${row.resolved_artist || row.artist}`;
@@ -282,14 +336,20 @@ function renderResults(data) {
   renderArc(data.rows);
   renderTrackList(data.rows);
 
+  lastRows = data.rows;
   lastUris = data.rows.map((row) => row.spotify_uri);
   const preset = presets.find((p) => p.id === $("event-select").value);
   $("playlist-name").value = preset ? `${preset.label} mix` : "Event mix";
   $("save-btn").disabled = false;
   $("save-result").classList.add("hidden");
+  $("copy-feedback").textContent = "";
+  $("save-area").classList.toggle("hidden", isVisitor);
+  $("visitor-note").classList.toggle("hidden", !isVisitor);
   $("results").classList.remove("hidden");
 }
 
 $("brief-form").addEventListener("submit", generate);
 $("save-btn").addEventListener("click", save);
+$("copy-links-btn").addEventListener("click", copyLinks);
+$("copy-list-btn").addEventListener("click", copyList);
 init();

@@ -387,6 +387,40 @@ button:disabled {
 .save-result { color: var(--haze-slate); margin: 0.6rem 0 0; }
 .save-result a { color: var(--dusk-amber); }
 
+/* ---------- exports ---------- */
+
+.export-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--dusk-amber);
+  border: 1px solid rgba(232, 162, 92, 0.5);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(232, 162, 92, 0.12);
+  filter: none;
+}
+
+.copy-feedback {
+  font-size: 0.85rem;
+  color: var(--haze-slate);
+}
+
+.visitor-note {
+  color: var(--haze-slate);
+  font-size: 0.88rem;
+  margin: 0.75rem 0 0;
+}
+
+.visitor-note a { color: var(--dusk-amber); }
+
 /* ---------- track list ---------- */
 
 #track-list { margin-top: 2rem; }
@@ -443,6 +477,9 @@ button:disabled {
 
 .track-name { font-weight: 500; }
 .track-name .artist { color: var(--haze-slate); font-weight: 400; }
+
+.track-link { color: inherit; text-decoration: none; }
+.track-link:hover { color: var(--dusk-amber); text-decoration: underline; }
 
 .track-rationale {
   grid-column: 2 / -1;

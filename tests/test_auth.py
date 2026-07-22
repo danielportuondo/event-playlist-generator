@@ -290,6 +290,88 @@ def test_get_valid_access_token_raises_on_spotify_error_param(tmp_path):
     assert message is not None and "access_denied" in message
 
 
+CONFIG_WITH_SECRET = Config(
+    gemini_api_key="test-key",
+    gemini_model="test-model",
+    spotify_client_id="test-client-id",
+    spotify_redirect_uri="http://127.0.0.1:8000/callback",
+    spotify_client_secret="test-secret",
+)
+
+
+def test_get_app_access_token_returns_none_without_client_secret(tmp_path):
+    def exploding_client(*args, **kwargs):
+        raise AssertionError("should not make an HTTP call without a client secret")
+
+    token = auth.get_app_access_token(
+        CONFIG,
+        client=httpx.Client(transport=httpx.MockTransport(exploding_client)),
+        cache_path=tmp_path / "app.json",
+    )
+
+    assert token is None
+
+
+def test_get_app_access_token_fetches_and_caches(tmp_path):
+    cache_path = tmp_path / ".app_token_cache.json"
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = dict(parse_qsl(request.content.decode()))
+        captured["auth"] = request.headers["Authorization"]
+        return httpx.Response(
+            200, json={"access_token": "app-at", "expires_in": 3600}
+        )
+
+    token = auth.get_app_access_token(
+        CONFIG_WITH_SECRET,
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+        cache_path=cache_path,
+        now=100.0,
+    )
+
+    assert token == "app-at"
+    assert captured["body"] == {"grant_type": "client_credentials"}
+    expected_basic = base64.b64encode(b"test-client-id:test-secret").decode()
+    assert captured["auth"] == f"Basic {expected_basic}"
+    saved = auth.load_token_cache(cache_path)
+    assert saved == {"access_token": "app-at", "expires_at": 100.0 + 3600}
+
+
+def test_get_app_access_token_returns_cached_token_when_not_expired(tmp_path):
+    cache_path = tmp_path / ".app_token_cache.json"
+    auth.save_token_cache(
+        {"access_token": "cached-app-at", "expires_at": 1000.0}, cache_path
+    )
+
+    def exploding_client(*args, **kwargs):
+        raise AssertionError("should not make an HTTP call for a valid cached token")
+
+    token = auth.get_app_access_token(
+        CONFIG_WITH_SECRET,
+        client=httpx.Client(transport=httpx.MockTransport(exploding_client)),
+        cache_path=cache_path,
+        now=500.0,
+    )
+
+    assert token == "cached-app-at"
+
+
+def test_get_app_access_token_refetches_expired_token(tmp_path):
+    cache_path = tmp_path / ".app_token_cache.json"
+    auth.save_token_cache(
+        {"access_token": "old-app-at", "expires_at": 1000.0}, cache_path
+    )
+    client = _token_response_client({"access_token": "new-app-at", "expires_in": 3600})
+
+    token = auth.get_app_access_token(
+        CONFIG_WITH_SECRET, client=client, cache_path=cache_path, now=999.0
+    )
+
+    assert token == "new-app-at"
+    assert auth.load_token_cache(cache_path)["access_token"] == "new-app-at"
+
+
 def test_get_cached_access_token_returns_none_without_cache(tmp_path):
     assert auth.get_cached_access_token(CONFIG, cache_path=tmp_path / "none.json") is None
 

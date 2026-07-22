@@ -18,6 +18,7 @@ from app.llm.prompt import Brief
 from app.spotify import auth
 from app.spotify.client import (
     add_tracks,
+    calls_today,
     create_playlist,
     resolve_candidates,
     unfollow_playlist,
@@ -98,11 +99,16 @@ def callback(code: str = "", state: str = "", error: str = "") -> RedirectRespon
 
 @app.get("/api/session")
 def session() -> dict:
+    config = _get_config()
     try:
-        token = auth.get_cached_access_token(_get_config())
+        token = auth.get_cached_access_token(config)
     except httpx.HTTPError:
         token = None
-    return {"authenticated": token is not None}
+    return {
+        "authenticated": token is not None,
+        "visitor_live": bool(config.spotify_client_secret),
+        "spotify_calls_today": calls_today(),
+    }
 
 
 @app.get("/api/presets")
@@ -155,7 +161,16 @@ def save(request: SaveRequest) -> dict:
 
 def run_pipeline(request: GenerateRequest) -> dict:
     config = _get_config()
-    token = auth.get_cached_access_token(config)
+    try:
+        token = auth.get_cached_access_token(config)
+    except httpx.HTTPError:
+        token = None
+    if token is None:
+        # Anonymous visitors: search-only client-credentials token (no allowlist cap).
+        try:
+            token = auth.get_app_access_token(config)
+        except httpx.HTTPError:
+            token = None
     if token is None:
         raise HTTPException(
             status_code=401, detail="Not logged in — visit /login first."
@@ -184,6 +199,18 @@ def run_pipeline(request: GenerateRequest) -> dict:
 
     try:
         stats = resolve_candidates(candidates, token)
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            retry_after = int(exc.response.headers.get("Retry-After", "0"))
+            hours = max(1, round(retry_after / 3600))
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Spotify's rate limit for this app was reached — "
+                    f"try again in about {hours} hour{'s' if hours > 1 else ''}."
+                ),
+            )
+        raise HTTPException(status_code=502, detail=f"Spotify resolution failed: {exc}")
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Spotify resolution failed: {exc}")
 

@@ -70,15 +70,84 @@ def test_session_reports_unauthenticated(monkeypatch):
     monkeypatch.setattr(main, "_get_config", lambda: CONFIG)
     monkeypatch.setattr(main.auth, "get_cached_access_token", lambda *a, **kw: None)
 
-    assert client.get("/api/session").json() == {"authenticated": False}
+    assert client.get("/api/session").json() == {
+        "authenticated": False,
+        "visitor_live": False,
+        "spotify_calls_today": 0,
+    }
+
+
+def test_session_reports_visitor_live_with_client_secret(monkeypatch):
+    config = Config(
+        gemini_api_key="test-key",
+        gemini_model="test-model",
+        spotify_client_id="test-client-id",
+        spotify_redirect_uri="http://127.0.0.1:8000/callback",
+        spotify_client_secret="test-secret",
+    )
+    monkeypatch.setattr(main, "_get_config", lambda: config)
+    monkeypatch.setattr(main.auth, "get_cached_access_token", lambda *a, **kw: None)
+
+    assert client.get("/api/session").json() == {
+        "authenticated": False,
+        "visitor_live": True,
+        "spotify_calls_today": 0,
+    }
 
 
 def test_generate_requires_login(monkeypatch):
     _patch_pipeline(monkeypatch, [], token=None)
+    monkeypatch.setattr(main.auth, "get_app_access_token", lambda *a, **kw: None)
 
     response = client.post("/api/generate", json={"event_id": "dinner_party"})
 
     assert response.status_code == 401
+
+
+def test_generate_falls_back_to_app_token_for_visitors(monkeypatch):
+    _patch_pipeline(monkeypatch, _fake_candidates(12), token=None)
+    seen = {}
+
+    def fake_app_token(*a, **kw):
+        seen["called"] = True
+        return "app-token"
+
+    def resolver(candidates, access_token, client=None):
+        seen["token"] = access_token
+        return _resolve_all(candidates, access_token, client)
+
+    monkeypatch.setattr(main.auth, "get_app_access_token", fake_app_token)
+    monkeypatch.setattr(main, "resolve_candidates", resolver)
+
+    response = client.post(
+        "/api/generate", json={"event_id": "dinner_party", "duration_min": 15}
+    )
+
+    assert response.status_code == 200
+    assert seen == {"called": True, "token": "app-token"}
+
+
+def test_generate_prefers_user_token_when_logged_in(monkeypatch):
+    _patch_pipeline(monkeypatch, _fake_candidates(12), token="user-token")
+    seen = {}
+
+    def resolver(candidates, access_token, client=None):
+        seen["token"] = access_token
+        return _resolve_all(candidates, access_token, client)
+
+    monkeypatch.setattr(
+        main.auth,
+        "get_app_access_token",
+        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("should not be called")),
+    )
+    monkeypatch.setattr(main, "resolve_candidates", resolver)
+
+    response = client.post(
+        "/api/generate", json={"event_id": "dinner_party", "duration_min": 15}
+    )
+
+    assert response.status_code == 200
+    assert seen["token"] == "user-token"
 
 
 def test_generate_rejects_unknown_event(monkeypatch):
@@ -151,6 +220,25 @@ def test_generate_shortens_playlist_on_resolution_shortfall(monkeypatch):
     data = response.json()
     assert len(data["rows"]) == 2
     assert "shortened" in data["warning"]
+
+
+def test_generate_503_with_friendly_message_on_rate_lockout(monkeypatch):
+    def resolve_429(candidates, access_token, client=None):
+        response = httpx.Response(
+            429,
+            headers={"Retry-After": "77236"},
+            request=httpx.Request("GET", "https://api.spotify.com/v1/search"),
+        )
+        raise httpx.HTTPStatusError("rate limited", request=response.request, response=response)
+
+    _patch_pipeline(monkeypatch, _fake_candidates(10), resolver=resolve_429)
+
+    response = client.post(
+        "/api/generate", json={"event_id": "dinner_party", "duration_min": 15}
+    )
+
+    assert response.status_code == 503
+    assert "try again in about 21 hours" in response.json()["detail"]
 
 
 def test_generate_502_when_nothing_resolves(monkeypatch):

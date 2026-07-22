@@ -1,4 +1,5 @@
 import json
+import time
 from urllib.parse import parse_qs, urlparse
 
 import httpx
@@ -89,6 +90,183 @@ def test_search_track_returns_none_when_no_results():
     )
 
     assert result is None
+
+
+def test_resolve_candidates_serves_repeat_lookups_from_cache(tmp_path):
+    cache_path = tmp_path / "resolution_cache.json"
+    tracks = [
+        CandidateTrack(
+            title="Dreams",
+            artist="Fleetwood Mac",
+            energy=50,
+            tempo=120,
+            valence=60,
+            rationale="r",
+        )
+    ]
+    first = client.resolve_candidates(
+        tracks,
+        "token-abc",
+        client=_mock_client(200, _search_result("track-id-1")),
+        cache_path=cache_path,
+    )
+    assert first.resolved == 1
+
+    def exploding(request):
+        raise AssertionError("cached lookup must not hit the API")
+
+    repeat = [
+        CandidateTrack(
+            title="  DREAMS ",
+            artist="fleetwood mac",
+            energy=50,
+            tempo=120,
+            valence=60,
+            rationale="r",
+        )
+    ]
+    second = client.resolve_candidates(
+        repeat,
+        "token-abc",
+        client=httpx.Client(transport=httpx.MockTransport(exploding)),
+        cache_path=cache_path,
+    )
+
+    assert second.resolved == 1
+    assert repeat[0].spotify_id == "track-id-1"
+
+
+def test_resolve_candidates_caches_no_hits_negatively(tmp_path):
+    cache_path = tmp_path / "resolution_cache.json"
+    tracks = [
+        CandidateTrack(
+            title="Ghost Song",
+            artist="Nobody",
+            energy=50,
+            tempo=120,
+            valence=60,
+            rationale="r",
+        )
+    ]
+    client.resolve_candidates(
+        tracks,
+        "token-abc",
+        client=_mock_client(200, _NO_RESULTS),
+        cache_path=cache_path,
+    )
+
+    def exploding(request):
+        raise AssertionError("negative-cached lookup must not hit the API")
+
+    repeat = [
+        CandidateTrack(
+            title="Ghost Song",
+            artist="Nobody",
+            energy=50,
+            tempo=120,
+            valence=60,
+            rationale="r",
+        )
+    ]
+    stats = client.resolve_candidates(
+        repeat,
+        "token-abc",
+        client=httpx.Client(transport=httpx.MockTransport(exploding)),
+        cache_path=cache_path,
+    )
+
+    assert stats.resolved == 0
+    assert repeat[0].spotify_id is None
+
+
+def test_resolve_candidates_retries_no_hit_after_negative_ttl(tmp_path):
+    cache_path = tmp_path / "resolution_cache.json"
+    key = client._cache_key("Ghost Song", "Nobody")
+    expired = time.time() - client.NEGATIVE_TTL_SECONDS - 1
+    cache_path.write_text(json.dumps({key: {"missed_at": expired}}))
+
+    tracks = [
+        CandidateTrack(
+            title="Ghost Song",
+            artist="Nobody",
+            energy=50,
+            tempo=120,
+            valence=60,
+            rationale="r",
+        )
+    ]
+    stats = client.resolve_candidates(
+        tracks,
+        "token-abc",
+        client=_mock_client(200, _search_result("track-id-9")),
+        cache_path=cache_path,
+    )
+
+    assert stats.resolved == 1
+    assert tracks[0].spotify_id == "track-id-9"
+    assert json.loads(cache_path.read_text())[key]["spotify_id"] == "track-id-9"
+
+
+def test_record_call_counts_each_search_request(monkeypatch, tmp_path):
+    log_path = tmp_path / "call_log.json"
+    monkeypatch.setattr(client, "CALL_LOG_PATH", log_path)
+    http_client = _mock_client(200, _NO_RESULTS)
+
+    client.search_track("A", "B", "token-abc", client=http_client)
+    client.search_track("C", "D", "token-abc", client=http_client)
+
+    assert client.calls_today() == 2
+
+
+def test_search_track_retries_on_429_honoring_retry_after():
+    calls = {"n": 0}
+    sleeps = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] < 3:
+            return httpx.Response(429, headers={"Retry-After": "7"})
+        return httpx.Response(200, json=_search_result("track-id-1"))
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    result = client.search_track(
+        "Landslide",
+        "Fleetwood Mac",
+        "token-abc",
+        client=http_client,
+        sleep=sleeps.append,
+    )
+
+    assert result.spotify_id == "track-id-1"
+    assert calls["n"] == 3
+    assert sleeps == [7, 7]
+
+
+def test_search_track_fails_fast_on_long_retry_after():
+    sleeps = []
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(429, headers={"Retry-After": "77236"})
+
+    http_client = httpx.Client(transport=httpx.MockTransport(handler))
+
+    try:
+        client.search_track(
+            "Landslide",
+            "Fleetwood Mac",
+            "token-abc",
+            client=http_client,
+            sleep=sleeps.append,
+        )
+        raise AssertionError("expected HTTPStatusError")
+    except httpx.HTTPStatusError as exc:
+        assert exc.response.status_code == 429
+    # An hours-long lockout is not worth sleeping through in-request
+    assert sleeps == []
+    assert calls["n"] == 1
 
 
 def test_search_track_parses_top_result():
