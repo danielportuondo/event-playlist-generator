@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from itertools import pairwise
 
 from app.arc.models import EventTemplate, Phase
 
@@ -40,7 +41,7 @@ def _interpolate_energy(anchors: list[tuple[float, float]], position: float) -> 
         return anchors[0][1]
     if position >= anchors[-1][0]:
         return anchors[-1][1]
-    for (pos_a, energy_a), (pos_b, energy_b) in zip(anchors, anchors[1:]):
+    for (pos_a, energy_a), (pos_b, energy_b) in pairwise(anchors):
         if pos_a <= position <= pos_b:
             span = pos_b - pos_a
             t = (position - pos_a) / span if span > 0 else 0.0

@@ -212,7 +212,7 @@ def run_pipeline(request: GenerateRequest) -> dict:
 
     try:
         candidates = generate_candidates(brief, template, duration_min, config)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 — genai SDK raises many types; all map to 502
         raise HTTPException(
             status_code=502, detail=f"Candidate generation failed: {exc}"
         )

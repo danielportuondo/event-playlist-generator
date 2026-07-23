@@ -399,7 +399,7 @@ button:disabled {
 .key-dot { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: var(--star-ivory); }
 
 /* svg internals */
-.arc-band { opacity: 0.5; }
+.arc-band { opacity: 0.16; }
 .arc-band-label {
   font-family: var(--font-display);
   font-style: italic;

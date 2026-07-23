@@ -2,12 +2,12 @@ from app.arc.models import ArcConstraints, EventTemplate, Phase
 
 
 def _default_constraints(**overrides: object) -> ArcConstraints:
-    base = dict(
-        max_energy_jump=25,
-        max_same_artist_total=2,
-        no_same_artist_adjacent=True,
-        avg_track_len_min=3.7,
-    )
+    base: dict[str, object] = {
+        "max_energy_jump": 25,
+        "max_same_artist_total": 2,
+        "no_same_artist_adjacent": True,
+        "avg_track_len_min": 3.7,
+    }
     base.update(overrides)
     return ArcConstraints(**base)
 

@@ -1,5 +1,7 @@
+from itertools import pairwise
+
 from app.arc.curve import allocate_slot_counts, build_target_curve
-from app.arc.models import ArcConstraints, EventTemplate, Phase
+from app.arc.models import Phase
 from app.arc.presets import PRESETS
 
 
@@ -40,14 +42,14 @@ def test_build_target_curve_is_smooth_ramp_not_staircase():
     # A smooth ramp means consecutive slots inside the same phase still differ.
     same_phase_pairs = [
         (a, b)
-        for a, b in zip(slots, slots[1:])
+        for a, b in pairwise(slots)
         if a.phase.name == b.phase.name
     ]
     assert any(a.target_energy != b.target_energy for a, b in same_phase_pairs)
 
     # No single adjacent jump should equal the full gap between the two
     # phase midpoints it straddles (that would be a staircase step).
-    for a, b in zip(slots, slots[1:]):
+    for a, b in pairwise(slots):
         if a.phase.name != b.phase.name:
             phase_a_mid = (a.phase.energy[0] + a.phase.energy[1]) / 2
             phase_b_mid = (b.phase.energy[0] + b.phase.energy[1]) / 2

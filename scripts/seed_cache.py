@@ -81,7 +81,7 @@ def harvest(rounds: int) -> None:
                             brief, template, template.default_duration_min, config
                         )
                         break
-                    except Exception as exc:
+                    except Exception as exc:  # noqa: BLE001 — retry any genai failure
                         # Free tier allows 15 requests/min; one generation bursts
                         # up to ~5 parallel phase calls, so back off a full window.
                         print(
@@ -199,7 +199,7 @@ def resolve(budget: int) -> None:
             break
         try:
             match = search_track(entry["title"], entry["artist"], token)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — abort cleanly on any API failure
             print(f"aborting on API error (likely quota): {exc}")
             break
         spent += 1

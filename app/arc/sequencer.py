@@ -65,7 +65,7 @@ def compute_total_cost(
 
     smoothness = 0.0
     anti_clump = 0.0
-    for a, b in zip(ordered_indices, ordered_indices[1:]):
+    for a, b in itertools.pairwise(ordered_indices):
         track_a, track_b = assignments[a], assignments[b]
         delta = abs(track_a.energy - track_b.energy)
         smoothness += max(0, delta - template.constraints.max_energy_jump)
