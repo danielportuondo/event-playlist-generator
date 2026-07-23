@@ -150,6 +150,60 @@ def test_generate_prefers_user_token_when_logged_in(monkeypatch):
     assert seen["token"] == "user-token"
 
 
+def _patch_visitor_pipeline(monkeypatch, candidates):
+    _patch_pipeline(monkeypatch, candidates, token=None)
+    monkeypatch.setattr(main.auth, "get_app_access_token", lambda *a, **kw: "app-token")
+
+
+def test_generate_blocks_visitor_over_daily_budget(monkeypatch):
+    def boom(*a, **kw):
+        raise AssertionError("generate_candidates should not run when blocked")
+
+    _patch_visitor_pipeline(monkeypatch, _fake_candidates(12))
+    monkeypatch.setattr(main, "generate_candidates", boom)
+    monkeypatch.setattr(main, "calls_today", lambda: 101)
+
+    response = client.post(
+        "/api/generate", json={"event_id": "dinner_party", "duration_min": 15}
+    )
+
+    assert response.status_code == 503
+    assert "budget" in response.json()["detail"]
+
+
+def test_generate_allows_visitor_under_daily_budget(monkeypatch):
+    _patch_visitor_pipeline(monkeypatch, _fake_candidates(12))
+    monkeypatch.setattr(main, "calls_today", lambda: 100)
+
+    response = client.post(
+        "/api/generate", json={"event_id": "dinner_party", "duration_min": 15}
+    )
+
+    assert response.status_code == 200
+
+
+def test_generate_owner_keeps_reserve_above_visitor_ceiling(monkeypatch):
+    _patch_pipeline(monkeypatch, _fake_candidates(12), token="user-token")
+    monkeypatch.setattr(main, "calls_today", lambda: 101)
+
+    response = client.post(
+        "/api/generate", json={"event_id": "dinner_party", "duration_min": 15}
+    )
+
+    assert response.status_code == 200
+
+
+def test_generate_blocks_owner_over_daily_budget(monkeypatch):
+    _patch_pipeline(monkeypatch, _fake_candidates(12), token="user-token")
+    monkeypatch.setattr(main, "calls_today", lambda: 121)
+
+    response = client.post(
+        "/api/generate", json={"event_id": "dinner_party", "duration_min": 15}
+    )
+
+    assert response.status_code == 503
+
+
 def test_generate_rejects_unknown_event(monkeypatch):
     _patch_pipeline(monkeypatch, _fake_candidates(10))
 

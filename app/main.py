@@ -26,6 +26,12 @@ from app.spotify.client import (
 
 STATIC_DIR = Path(__file__).parent / "static"
 
+# Observed dev-mode lockout at ~230 calls/day; ceilings keep an ~80-call margin,
+# with 20 calls reserved above the visitor ceiling for the owner's own use.
+WORST_CASE_CALLS_PER_GENERATION = 30
+VISITOR_DAILY_CEILING = 130
+OWNER_DAILY_CEILING = 150
+
 app = FastAPI(title="Event-Arc Playlist Builder")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -165,10 +171,12 @@ def run_pipeline(request: GenerateRequest) -> dict:
         token = auth.get_cached_access_token(config)
     except httpx.HTTPError:
         token = None
+    is_visitor = False
     if token is None:
         # Anonymous visitors: search-only client-credentials token (no allowlist cap).
         try:
             token = auth.get_app_access_token(config)
+            is_visitor = token is not None
         except httpx.HTTPError:
             token = None
     if token is None:
@@ -180,6 +188,13 @@ def run_pipeline(request: GenerateRequest) -> dict:
     if template is None:
         raise HTTPException(
             status_code=422, detail=f"Unknown event_id '{request.event_id}'."
+        )
+
+    ceiling = VISITOR_DAILY_CEILING if is_visitor else OWNER_DAILY_CEILING
+    if calls_today() + WORST_CASE_CALLS_PER_GENERATION > ceiling:
+        raise HTTPException(
+            status_code=503,
+            detail="Daily Spotify budget for this app is used up — try again tomorrow.",
         )
 
     duration_min = request.duration_min or template.default_duration_min
