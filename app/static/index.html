@@ -8,7 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400;1,9..144,500&family=Albert+Sans:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b0f1f'/%3E%3Cpath d='M4 24 Q 10 6 16 11 Q 22 16 28 8' fill='none' stroke='%23e8a25c' stroke-width='2.5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/styles.css?v=2">
 </head>
 <body>
   <div class="sky" aria-hidden="true"></div>
@@ -17,6 +18,10 @@
     <p class="eyebrow">Event-Arc</p>
     <h1>Every evening has an arc.<br>Your playlist should follow it.</h1>
     <p class="hero-sub">Pick the occasion, set the length, and get a sequence that rises and settles with the room — then send it to Spotify.</p>
+    <figure class="arc-preview" aria-hidden="false">
+      <div id="preview-mount"></div>
+      <figcaption id="preview-caption" class="preview-caption"></figcaption>
+    </figure>
   </header>
 
   <main>
@@ -126,6 +131,6 @@
     <span id="call-count"></span>
   </footer>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=2"></script>
 </body>
 </html>

@@ -125,6 +125,11 @@ def presets() -> list[dict]:
             "label": t.label,
             "description": t.description,
             "default_duration_min": t.default_duration_min,
+            "avg_track_len_min": t.constraints.avg_track_len_min,
+            "phases": [
+                {"name": p.name, "fraction": p.fraction, "energy": list(p.energy)}
+                for p in t.phases
+            ],
         }
         for t in PRESETS.values()
     ]

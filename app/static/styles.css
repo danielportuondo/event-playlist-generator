@@ -35,6 +35,21 @@ body {
   pointer-events: none;
 }
 
+/* dusk fades to full night as the page scrolls */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: scroll()) {
+    .sky {
+      animation: nightfall linear both;
+      animation-timeline: scroll();
+      animation-range: 0 40rem;
+    }
+  }
+}
+
+@keyframes nightfall {
+  to { opacity: 0.25; }
+}
+
 .hero, main, .foot {
   position: relative;
   max-width: 46rem;
@@ -66,6 +81,52 @@ body {
   color: var(--haze-slate);
   max-width: 34rem;
   margin: 0;
+}
+
+/* ---------- hero arc preview ---------- */
+
+.arc-preview { margin: 2rem 0 0; }
+
+.arc-preview svg { display: block; width: 100%; height: auto; }
+
+.preview-band { opacity: 0.12; }
+
+.preview-band-label { font-size: 17px; }
+
+.preview-line {
+  fill: none;
+  stroke: url(#preview-grad);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+.preview-caption {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--haze-slate);
+  margin-top: 0.4rem;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .preview-line.draw-in {
+    stroke-dasharray: 1;
+    stroke-dashoffset: 1;
+    animation: draw 1.2s ease-out 0.35s both;
+  }
+}
+
+/* page-load sequence: eyebrow → headline → sub → arc */
+@media (prefers-reduced-motion: no-preference) {
+  .hero > * { animation: rise-in 0.55s ease-out both; }
+  .hero .eyebrow { animation-delay: 0s; }
+  .hero h1 { animation-delay: 0.08s; }
+  .hero .hero-sub { animation-delay: 0.16s; }
+  .hero .arc-preview { animation-delay: 0.26s; }
+}
+
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(0.6rem); }
+  to { opacity: 1; transform: none; }
 }
 
 /* ---------- notices ---------- */
@@ -247,7 +308,10 @@ button {
   transition: filter 0.15s, transform 0.15s;
 }
 
-button:hover:not(:disabled) { filter: brightness(1.08); }
+button:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: 0 0 24px -6px rgba(232, 162, 92, 0.55);
+}
 button:active:not(:disabled) { transform: translateY(1px); }
 
 button:disabled {
@@ -406,6 +470,7 @@ button:disabled {
 .btn-ghost:hover:not(:disabled) {
   background: rgba(232, 162, 92, 0.12);
   filter: none;
+  box-shadow: none;
 }
 
 .copy-feedback {
@@ -523,6 +588,9 @@ button:disabled {
 
 @media (max-width: 640px) {
   .hero { padding-top: 2.5rem; }
+  .hero h1 br { display: none; }
+  .arc-preview { margin-top: 1.5rem; }
+  .preview-band-label { display: none; }
   .card { padding: 1.1rem; }
   .field-grid { grid-template-columns: 1fr 6rem; }
   .seed-row { grid-template-columns: 1fr; }

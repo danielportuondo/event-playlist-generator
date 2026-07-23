@@ -62,8 +62,20 @@ def test_presets_lists_all_six():
     ids = {p["id"] for p in data}
     assert "dinner_party" in ids and "workout_run" in ids
     assert all(
-        {"id", "label", "description", "default_duration_min"} <= set(p) for p in data
+        {
+            "id",
+            "label",
+            "description",
+            "default_duration_min",
+            "avg_track_len_min",
+            "phases",
+        }
+        <= set(p)
+        for p in data
     )
+    for p in data:
+        assert p["phases"], f"{p['id']} has no phases"
+        assert all({"name", "fraction", "energy"} <= set(ph) for ph in p["phases"])
 
 
 def test_session_reports_unauthenticated(monkeypatch):

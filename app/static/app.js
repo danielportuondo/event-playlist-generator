@@ -29,6 +29,7 @@ async function init() {
     select.appendChild(opt);
   }
   select.addEventListener("change", applyPresetDefaults);
+  $("duration").addEventListener("input", updatePreviewCaption);
   applyPresetDefaults();
 }
 
@@ -37,6 +38,8 @@ function applyPresetDefaults() {
   if (!preset) return;
   $("duration").value = preset.default_duration_min;
   $("event-description").textContent = preset.description;
+  renderPreview(preset);
+  updatePreviewCaption();
 }
 
 function collectSeeds() {
@@ -137,6 +140,125 @@ function copyList() {
     (r) => `${r.resolved_title || r.title} — ${r.resolved_artist || r.artist}`
   );
   copyToClipboard(lines.join("\n"), `Copied ${lines.length} tracks as text.`);
+}
+
+/* ---------- hero arc preview ---------- */
+
+const PREVIEW = { W: 1000, H: 190, pad: { top: 34, right: 10, bottom: 14, left: 10 }, samples: 48 };
+let previewYs = null;
+let previewAnim = null;
+
+function phaseAnchors(phases) {
+  const anchors = [];
+  let cursor = 0;
+  for (const p of phases) {
+    anchors.push([cursor + p.fraction / 2, (p.energy[0] + p.energy[1]) / 2]);
+    cursor += p.fraction;
+  }
+  return anchors;
+}
+
+function interpolateEnergy(anchors, position) {
+  if (position <= anchors[0][0]) return anchors[0][1];
+  if (position >= anchors[anchors.length - 1][0]) return anchors[anchors.length - 1][1];
+  for (let i = 0; i < anchors.length - 1; i++) {
+    const [posA, energyA] = anchors[i];
+    const [posB, energyB] = anchors[i + 1];
+    if (position >= posA && position <= posB) {
+      const span = posB - posA;
+      const t = span > 0 ? (position - posA) / span : 0;
+      return energyA + t * (energyB - energyA);
+    }
+  }
+  return anchors[anchors.length - 1][1];
+}
+
+function sampleCurve(phases) {
+  const anchors = phaseAnchors(phases);
+  const ys = [];
+  for (let i = 0; i < PREVIEW.samples; i++) {
+    ys.push(interpolateEnergy(anchors, i / (PREVIEW.samples - 1)));
+  }
+  return ys;
+}
+
+function previewPoints(ys) {
+  const { W, H, pad } = PREVIEW;
+  const innerW = W - pad.left - pad.right;
+  const innerH = H - pad.top - pad.bottom;
+  return ys.map((e, i) => [
+    pad.left + (i / (ys.length - 1)) * innerW,
+    pad.top + (1 - e / 100) * innerH,
+  ]);
+}
+
+function reducedMotion() {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
+function renderPreview(preset) {
+  const { W, H, pad } = PREVIEW;
+  const innerW = W - pad.left - pad.right;
+  const innerH = H - pad.top - pad.bottom;
+  const mount = $("preview-mount");
+  const targetYs = sampleCurve(preset.phases);
+
+  const svg = el("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+  svg.setAttribute("aria-label", `Target energy shape for ${preset.label}`);
+
+  const defs = el("defs", {}, svg);
+  const grad = el("linearGradient", { id: "preview-grad", x1: 0, y1: 0, x2: 1, y2: 0 }, defs);
+  el("stop", { offset: "0%", "stop-color": "#e8a25c" }, grad);
+  el("stop", { offset: "100%", "stop-color": "#c4685a" }, grad);
+
+  let cursor = 0;
+  preset.phases.forEach((p, i) => {
+    const x0 = pad.left + cursor * innerW;
+    const w = p.fraction * innerW;
+    el("rect", {
+      class: "preview-band", x: x0, y: pad.top, width: w, height: innerH,
+      fill: bandColor(i, preset.phases.length),
+    }, svg);
+    const label = el("text", {
+      class: "arc-band-label preview-band-label",
+      x: x0 + w / 2, y: 22, "text-anchor": "middle",
+    }, svg);
+    label.textContent = p.name;
+    cursor += p.fraction;
+  });
+
+  const line = el("path", { class: "preview-line", pathLength: 1 }, svg);
+  mount.innerHTML = "";
+  mount.appendChild(svg);
+
+  if (previewAnim) cancelAnimationFrame(previewAnim);
+  const fromYs = previewYs;
+  previewYs = targetYs;
+
+  if (!fromYs || reducedMotion()) {
+    if (!fromYs) line.classList.add("draw-in");
+    line.setAttribute("d", splinePath(previewPoints(targetYs)));
+    return;
+  }
+
+  const start = performance.now();
+  const duration = 500;
+  const step = (now) => {
+    const t = Math.min((now - start) / duration, 1);
+    const ease = 1 - Math.pow(1 - t, 3);
+    const ys = targetYs.map((y, i) => fromYs[i] + (y - fromYs[i]) * ease);
+    line.setAttribute("d", splinePath(previewPoints(ys)));
+    if (t < 1) previewAnim = requestAnimationFrame(step);
+  };
+  previewAnim = requestAnimationFrame(step);
+}
+
+function updatePreviewCaption() {
+  const preset = presets.find((p) => p.id === $("event-select").value);
+  if (!preset) return;
+  const minutes = Number($("duration").value) || preset.default_duration_min;
+  const slots = Math.max(1, Math.round(minutes / preset.avg_track_len_min));
+  $("preview-caption").textContent = `target energy · ≈ ${slots} tracks · ${minutes} min`;
 }
 
 /* ---------- arc visualization ---------- */
