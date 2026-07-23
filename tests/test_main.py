@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 from app import main
 from app.arc.models import CandidateTrack
 from app.config import Config
+from app.spotify import client as spotify_client
 from app.spotify.client import ResolutionStats
 
 CONFIG = Config(
@@ -305,6 +306,48 @@ def test_generate_503_with_friendly_message_on_rate_lockout(monkeypatch):
 
     assert response.status_code == 503
     assert "try again in about 21 hours" in response.json()["detail"]
+
+
+def test_healthz_costs_nothing():
+    response = client.get("/healthz")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_generate_rate_lockout_marks_day_exhausted(monkeypatch):
+    def resolve_429(candidates, access_token, client=None):
+        response = httpx.Response(
+            429,
+            headers={"Retry-After": "77236"},
+            request=httpx.Request("GET", "https://api.spotify.com/v1/search"),
+        )
+        raise httpx.HTTPStatusError("rate limited", request=response.request, response=response)
+
+    _patch_pipeline(monkeypatch, _fake_candidates(10), resolver=resolve_429)
+
+    client.post("/api/generate", json={"event_id": "dinner_party", "duration_min": 15})
+
+    assert spotify_client.calls_today() >= main.OWNER_DAILY_CEILING
+
+
+def test_generate_short_429_does_not_mark_day_exhausted(monkeypatch):
+    def resolve_429(candidates, access_token, client=None):
+        response = httpx.Response(
+            429,
+            headers={"Retry-After": "30"},
+            request=httpx.Request("GET", "https://api.spotify.com/v1/search"),
+        )
+        raise httpx.HTTPStatusError("rate limited", request=response.request, response=response)
+
+    _patch_pipeline(monkeypatch, _fake_candidates(10), resolver=resolve_429)
+
+    response = client.post(
+        "/api/generate", json={"event_id": "dinner_party", "duration_min": 15}
+    )
+
+    assert response.status_code == 503
+    assert spotify_client.calls_today() == 0
 
 
 def test_generate_502_when_nothing_resolves(monkeypatch):

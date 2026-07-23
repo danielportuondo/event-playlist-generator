@@ -33,6 +33,15 @@ def calls_today(path: Path | None = None) -> int:
     return _load_json(path or CALL_LOG_PATH).get(time.strftime("%Y-%m-%d"), 0)
 
 
+def mark_day_exhausted(path: Path | None = None, floor: int = 1000) -> None:
+    """Force today's count past every ceiling so the budget guard trips."""
+    path = path or CALL_LOG_PATH
+    today = time.strftime("%Y-%m-%d")
+    log = _load_json(path)
+    log[today] = max(log.get(today, 0), floor)
+    path.write_text(json.dumps(log))
+
+
 @dataclass(frozen=True)
 class TrackMatch:
     spotify_id: str

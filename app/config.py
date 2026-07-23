@@ -12,6 +12,10 @@ class Config:
     spotify_redirect_uri: str
     # Optional: enables client-credentials search for anonymous visitors.
     spotify_client_secret: str = ""
+    # Optional pair: persists call log + resolution cache to a private GitHub
+    # Gist across restarts (Render's free-tier disk is ephemeral).
+    gist_token: str = ""
+    gist_id: str = ""
 
 
 def load_config() -> Config:
@@ -22,6 +26,8 @@ def load_config() -> Config:
     spotify_client_id = os.environ.get("SPOTIFY_CLIENT_ID", "").strip()
     spotify_redirect_uri = os.environ.get("SPOTIFY_REDIRECT_URI", "").strip()
     spotify_client_secret = os.environ.get("SPOTIFY_CLIENT_SECRET", "").strip()
+    gist_token = os.environ.get("GIST_TOKEN", "").strip()
+    gist_id = os.environ.get("GIST_ID", "").strip()
 
     missing = [
         name
@@ -45,4 +51,6 @@ def load_config() -> Config:
         spotify_client_id=spotify_client_id,
         spotify_redirect_uri=spotify_redirect_uri,
         spotify_client_secret=spotify_client_secret,
+        gist_token=gist_token,
+        gist_id=gist_id,
     )

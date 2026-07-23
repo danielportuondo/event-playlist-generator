@@ -218,6 +218,25 @@ def test_record_call_counts_each_search_request(monkeypatch, tmp_path):
     assert client.calls_today() == 2
 
 
+def test_mark_day_exhausted_trips_the_daily_budget(monkeypatch, tmp_path):
+    log_path = tmp_path / "call_log.json"
+    monkeypatch.setattr(client, "CALL_LOG_PATH", log_path)
+    client.record_call()
+
+    client.mark_day_exhausted()
+
+    assert client.calls_today() == 1000
+
+
+def test_mark_day_exhausted_keeps_higher_existing_count(tmp_path):
+    log_path = tmp_path / "call_log.json"
+    log_path.write_text(json.dumps({time.strftime("%Y-%m-%d"): 2000}))
+
+    client.mark_day_exhausted(path=log_path)
+
+    assert client.calls_today(path=log_path) == 2000
+
+
 def test_search_track_retries_on_429_honoring_retry_after():
     calls = {"n": 0}
     sleeps = []

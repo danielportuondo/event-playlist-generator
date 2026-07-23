@@ -1,6 +1,7 @@
 import secrets
 import time
 from collections import Counter
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 import httpx
@@ -9,6 +10,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from app import persistence
 from app.arc.curve import build_target_curve
 from app.arc.presets import PRESETS
 from app.arc.sequencer import SequencingError, sequence
@@ -20,6 +22,7 @@ from app.spotify.client import (
     add_tracks,
     calls_today,
     create_playlist,
+    mark_day_exhausted,
     resolve_candidates,
     unfollow_playlist,
 )
@@ -32,7 +35,17 @@ WORST_CASE_CALLS_PER_GENERATION = 30
 VISITOR_DAILY_CEILING = 130
 OWNER_DAILY_CEILING = 150
 
-app = FastAPI(title="Event-Arc Playlist Builder")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        config = _get_config()
+    except ValueError:
+        config = None  # missing env vars keep surfacing on first request, not at boot
+    persistence.hydrate(config)
+    yield
+
+
+app = FastAPI(title="Event-Arc Playlist Builder", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
 _config: Config | None = None
@@ -64,6 +77,12 @@ class SaveRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     uris: list[str] = Field(min_length=1)
     description: str = ""
+
+
+@app.get("/healthz")
+def healthz() -> dict:
+    # Keep-alive ping target (UptimeRobot); must cost zero external calls.
+    return {"status": "ok"}
 
 
 @app.get("/")
@@ -163,6 +182,8 @@ def save(request: SaveRequest) -> dict:
             pass  # cleanup is best-effort; surface the original failure
         raise HTTPException(status_code=502, detail=f"Spotify save failed: {exc}")
 
+    persistence.sync(config)
+
     return {
         "playlist_id": playlist["id"],
         "playlist_url": playlist.get("external_urls", {}).get("spotify", ""),
@@ -222,6 +243,11 @@ def run_pipeline(request: GenerateRequest) -> dict:
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 429:
             retry_after = int(exc.response.headers.get("Retry-After", "0"))
+            if retry_after > 3600:
+                # Hours-long lockout means the daily quota is gone; trip the
+                # budget guard so later requests stop hitting Spotify at all.
+                mark_day_exhausted()
+                persistence.sync(config)
             hours = max(1, round(retry_after / 3600))
             raise HTTPException(
                 status_code=503,
@@ -260,6 +286,8 @@ def run_pipeline(request: GenerateRequest) -> dict:
         result = sequence(template, duration_min, resolved, seeds=seeds or None)
     except SequencingError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+    persistence.sync(config)
 
     rows = result.breakdown()
     for row, assignment in zip(rows, result.assignments):
